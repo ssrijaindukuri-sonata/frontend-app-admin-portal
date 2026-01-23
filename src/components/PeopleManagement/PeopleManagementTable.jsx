@@ -9,17 +9,45 @@ import OrgMemberCard from './OrgMemberCard';
 import useEnterpriseMembersTableData from './data/hooks/useEnterpriseMembersTableData';
 import DownloadCsvButton from './DownloadCSVButton';
 
-const FilterStatus = (rest) => <DataTable.FilterStatus showFilteredFields={false} {...rest} />;
+const FilterStatus = (rest) => (
+  <DataTable.FilterStatus showFilteredFields={false} {...rest} />
+);
 
-const PeopleManagementTable = ({ enterpriseId }) => {
+const PeopleTableFilter = (props) => {
+  const { column } = props;
+  const { learnersTabEnabled } = column;
+
+  return (
+    <TableTextFilter
+      {...props}
+      placeholder={learnersTabEnabled ? 'Search by learner details' : 'Search by name'}
+      aria-label={learnersTabEnabled ? 'Search by learner details' : 'Search by name'}
+    />
+  );
+};
+
+PeopleTableFilter.propTypes = {
+  column: PropTypes.shape({
+    learnersTabEnabled: PropTypes.bool.isRequired,
+  }).isRequired,
+};
+
+const PeopleManagementTable = ({ enterpriseId, learnersTabEnabled }) => {
   const {
-    isLoading: isTableLoading,
+    isLoading,
     enterpriseMembersTableData,
     fetchEnterpriseMembersTableData,
     fetchAllEnterpriseMembersData,
   } = useEnterpriseMembersTableData({ enterpriseId });
 
-  const tableColumns = [{ Header: 'Name', accessor: 'name' }];
+  const tableColumns = [
+    {
+      Header: learnersTabEnabled ? 'Learner details' : 'Name',
+      accessor: 'name',
+      learnersTabEnabled,
+    },
+  ];
+
   return (
     <DataTable
       isSortable
@@ -28,17 +56,17 @@ const PeopleManagementTable = ({ enterpriseId }) => {
       manualPagination
       isFilterable
       manualFilters
-      isLoading={isTableLoading}
-      defaultColumnValues={{ Filter: TableTextFilter }}
+      isLoading={isLoading}
+      columns={tableColumns}
+      defaultColumnValues={{
+        Filter: PeopleTableFilter,
+      }}
       FilterStatusComponent={FilterStatus}
       numBreakoutFilters={2}
-      columns={tableColumns}
       initialState={{
         pageSize: 10,
         pageIndex: 0,
-        sortBy: [
-          { id: 'name', desc: true },
-        ],
+        sortBy: [{ id: 'name', desc: true }],
         filters: [],
       }}
       fetchData={fetchEnterpriseMembersTableData}
@@ -67,10 +95,13 @@ const PeopleManagementTable = ({ enterpriseId }) => {
 
 PeopleManagementTable.propTypes = {
   enterpriseId: PropTypes.string.isRequired,
+  learnersTabEnabled: PropTypes.bool.isRequired,
 };
 
-const mapStateToProps = state => ({
+const mapStateToProps = (state) => ({
   enterpriseId: state.portalConfiguration.enterpriseId,
+  learnersTabEnabled: state.portalConfiguration.enterpriseFeatures?.enterprise_invite_admins_enabled,
+  // learnersTabEnabled: true,
 });
 
 export default connect(mapStateToProps)(PeopleManagementTable);

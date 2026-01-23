@@ -15,6 +15,7 @@ import { useAllFlexEnterpriseGroups } from '../../learner-credit-management/data
 import { EnterpriseSubsidiesContext } from '../../EnterpriseSubsidiesContext';
 import PeopleManagementPage from '..';
 import EVENT_NAMES from '../../../eventTracking';
+import useEnterpriseMembersTableData from '../data/hooks/useEnterpriseMembersTableData';
 
 const mockStore = configureMockStore([thunk]);
 const getMockStore = (store) => mockStore(store);
@@ -59,6 +60,8 @@ jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useSearchParams: jest.fn(),
 }));
+
+jest.mock('../data/hooks/useEnterpriseMembersTableData', () => jest.fn());
 
 const mockGroupsResponse = [{
   enterpriseCustomer: enterpriseUUID,
@@ -106,6 +109,30 @@ const PeopleManagementPageWrapper = ({
   );
 };
 
+// Mock the enterprise members table data hook before all tests
+beforeEach(() => {
+  jest.clearAllMocks();
+
+  useEnterpriseMembersTableData.mockReturnValue({
+    isLoading: false,
+    enterpriseMembersTableData: {
+      results: [
+        {
+          enterpriseCustomerUser: {
+            userId: 1,
+            name: 'Test User',
+            email: 'test@example.com',
+          },
+        },
+      ],
+      itemCount: 1,
+      pageCount: 1,
+    },
+    fetchEnterpriseMembersTableData: jest.fn(),
+    fetchAllEnterpriseMembersData: jest.fn(),
+  });
+});
+
 describe('<PeopleManagementPage >', () => {
   it('renders the PeopleManagementPage zero state', async () => {
     const user = userEvent.setup();
@@ -126,6 +153,7 @@ describe('<PeopleManagementPage >', () => {
       );
     });
   });
+
   it('renders the PeopleManagementPage zero state without LC', () => {
     useAllFlexEnterpriseGroups.mockReturnValue({ data: { results: [] } });
     const store = getMockStore(initialStoreState);
@@ -144,6 +172,7 @@ describe('<PeopleManagementPage >', () => {
     expect(screen.getByText("You don't have any groups yet.")).toBeInTheDocument();
     expect(screen.getByText("Once a group is created, you can track members' progress.")).toBeInTheDocument();
   });
+
   it('renders the PeopleManagementPage group card grid', () => {
     useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
     const store = getMockStore(initialStoreState);
@@ -161,6 +190,7 @@ describe('<PeopleManagementPage >', () => {
     expect(screen.getByText('only cool people')).toBeInTheDocument();
     expect(screen.getByText('4 members')).toBeInTheDocument();
   });
+
   it('renders the PeopleManagementPage group card grid with collapsible', async () => {
     const user = userEvent.setup();
     useAllFlexEnterpriseGroups.mockReturnValue({ data: mockMultipleGroupsResponse });
@@ -202,6 +232,7 @@ describe('<PeopleManagementPage >', () => {
     const openCollapsible = screen.getByText('Show less');
     expect(openCollapsible).toBeInTheDocument();
   });
+
   it('renders group deleted toast after redirect', async () => {
     useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
     // eslint-disable-next-line no-global-assign
@@ -217,6 +248,244 @@ describe('<PeopleManagementPage >', () => {
     render(<PeopleManagementPageWrapper />);
     await waitFor(() => {
       expect(screen.queryByText('Group deleted')).toBeInTheDocument();
+    });
+  });
+
+  describe('Learners Tab', () => {
+    it('does not render Learners tab when feature flag is disabled', () => {
+      useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
+
+      const store = getMockStore({
+        portalConfiguration: {
+          enterpriseId: enterpriseUUID,
+          enterpriseSlug,
+          enterpriseFeatures: {
+            enterprise_invite_admins_enabled: false,
+          },
+        },
+      });
+
+      render(
+        <BrowserRouter>
+          <IntlProvider locale="en">
+            <Provider store={store}>
+              <EnterpriseSubsidiesContext.Provider value={defaultEnterpriseSubsidiesContextValue}>
+                <PeopleManagementPage />
+              </EnterpriseSubsidiesContext.Provider>
+            </Provider>
+          </IntlProvider>
+        </BrowserRouter>,
+      );
+
+      // Learners tab should NOT be present
+      expect(
+        screen.queryByRole('tab', { name: /learners/i }),
+      ).not.toBeInTheDocument();
+
+      // Tabs wrapper should NOT be rendered
+      expect(
+        screen.queryByRole('tablist'),
+      ).not.toBeInTheDocument();
+
+      // Learners content should still be visible
+      expect(
+        screen.getByText("Your organization's groups"),
+      ).toBeInTheDocument();
+
+      expect(
+        screen.getByText("Your organization's members"),
+      ).toBeInTheDocument();
+    });
+
+    it('renders Learners tab when feature flag is enabled', () => {
+      useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
+
+      const store = getMockStore({
+        portalConfiguration: {
+          enterpriseId: enterpriseUUID,
+          enterpriseSlug,
+          enterpriseFeatures: {
+            enterprise_invite_admins_enabled: true,
+          },
+        },
+      });
+
+      render(
+        <BrowserRouter>
+          <IntlProvider locale="en">
+            <Provider store={store}>
+              <EnterpriseSubsidiesContext.Provider value={defaultEnterpriseSubsidiesContextValue}>
+                <PeopleManagementPage />
+              </EnterpriseSubsidiesContext.Provider>
+            </Provider>
+          </IntlProvider>
+        </BrowserRouter>,
+      );
+
+      const learnersTab = screen.getByRole('tab', { name: /learners/i });
+
+      expect(learnersTab).toBeInTheDocument();
+      expect(learnersTab).toHaveAttribute('aria-selected', 'true');
+
+      // Tabs wrapper should be present
+      expect(
+        screen.getByRole('tablist'),
+      ).toBeInTheDocument();
+
+      // Learners content should be rendered inside the tab
+      expect(
+        screen.getByText("Your organization's groups"),
+      ).toBeInTheDocument();
+
+      expect(
+        screen.getByText("Your organization's learners"),
+      ).toBeInTheDocument();
+    });
+
+    it('displays "View all members" text when feature flag is disabled', () => {
+      useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
+
+      const store = getMockStore({
+        portalConfiguration: {
+          enterpriseId: enterpriseUUID,
+          enterpriseSlug,
+          enterpriseFeatures: {
+            enterprise_invite_admins_enabled: false,
+          },
+        },
+      });
+
+      render(
+        <BrowserRouter>
+          <IntlProvider locale="en">
+            <Provider store={store}>
+              <EnterpriseSubsidiesContext.Provider value={defaultEnterpriseSubsidiesContextValue}>
+                <PeopleManagementPage />
+              </EnterpriseSubsidiesContext.Provider>
+            </Provider>
+          </IntlProvider>
+        </BrowserRouter>,
+      );
+
+      // Should show "members" text when flag is disabled
+      expect(
+        screen.getByText('View all members of your organization.'),
+      ).toBeInTheDocument();
+
+      // Should NOT show "learners" text
+      expect(
+        screen.queryByText('View all learners of your organization.'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('displays "View all learners" text when feature flag is enabled', () => {
+      useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
+
+      const store = getMockStore({
+        portalConfiguration: {
+          enterpriseId: enterpriseUUID,
+          enterpriseSlug,
+          enterpriseFeatures: {
+            enterprise_invite_admins_enabled: true,
+          },
+        },
+      });
+
+      render(
+        <BrowserRouter>
+          <IntlProvider locale="en">
+            <Provider store={store}>
+              <EnterpriseSubsidiesContext.Provider value={defaultEnterpriseSubsidiesContextValue}>
+                <PeopleManagementPage />
+              </EnterpriseSubsidiesContext.Provider>
+            </Provider>
+          </IntlProvider>
+        </BrowserRouter>,
+      );
+
+      // Should show "learners" text when flag is enabled
+      expect(
+        screen.getByText('View all learners of your organization.'),
+      ).toBeInTheDocument();
+
+      // Should NOT show "members" text
+      expect(
+        screen.queryByText('View all members of your organization.'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('PeopleManagementTable Search Placeholder', () => {
+    it('shows search by name input when feature flag is disabled', async () => {
+      useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
+
+      const store = getMockStore({
+        portalConfiguration: {
+          enterpriseId: enterpriseUUID,
+          enterpriseSlug,
+          enterpriseFeatures: {
+            enterprise_invite_admins_enabled: false,
+          },
+        },
+      });
+
+      render(
+        <BrowserRouter>
+          <IntlProvider locale="en">
+            <Provider store={store}>
+              <EnterpriseSubsidiesContext.Provider value={defaultEnterpriseSubsidiesContextValue}>
+                <PeopleManagementPage />
+              </EnterpriseSubsidiesContext.Provider>
+            </Provider>
+          </IntlProvider>
+        </BrowserRouter>,
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('textbox', { name: /search by name/i }),
+        ).toBeInTheDocument();
+      });
+
+      expect(
+        screen.queryByRole('textbox', { name: /search by learner details/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('shows search by learner details input when feature flag is enabled', async () => {
+      useAllFlexEnterpriseGroups.mockReturnValue({ data: mockGroupsResponse });
+
+      const store = getMockStore({
+        portalConfiguration: {
+          enterpriseId: enterpriseUUID,
+          enterpriseSlug,
+          enterpriseFeatures: {
+            enterprise_invite_admins_enabled: true,
+          },
+        },
+      });
+
+      render(
+        <BrowserRouter>
+          <IntlProvider locale="en">
+            <Provider store={store}>
+              <EnterpriseSubsidiesContext.Provider value={defaultEnterpriseSubsidiesContextValue}>
+                <PeopleManagementPage />
+              </EnterpriseSubsidiesContext.Provider>
+            </Provider>
+          </IntlProvider>
+        </BrowserRouter>,
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('textbox', { name: /search by learner details/i }),
+        ).toBeInTheDocument();
+      });
+
+      expect(
+        screen.queryByRole('textbox', { name: /search by name/i }),
+      ).not.toBeInTheDocument();
     });
   });
 });
